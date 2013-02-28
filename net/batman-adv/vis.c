@@ -94,7 +94,6 @@ static struct vis_info *vis_hash_find(struct bat_priv *bat_priv,
 {
 	struct hashtable_t *hash = bat_priv->vis_hash;
 	struct hlist_head *head;
-	struct hlist_node *node;
 	struct vis_info *vis_info, *vis_info_tmp = NULL;
 	uint32_t index;
 
@@ -105,8 +104,8 @@ static struct vis_info *vis_hash_find(struct bat_priv *bat_priv,
 	head = &hash->table[index];
 
 	rcu_read_lock();
-	hlist_for_each_entry_rcu(vis_info, node, head, hash_entry) {
-		if (!vis_info_cmp(node, data))
+	hlist_for_each_entry_rcu(vis_info, head, hash_entry) {
+		if (!vis_info_cmp(&vis_info->hash_entry, data))
 			continue;
 
 		vis_info_tmp = vis_info;
@@ -124,9 +123,8 @@ static void vis_data_insert_interface(const uint8_t *interface,
 				      bool primary)
 {
 	struct if_list_entry *entry;
-	struct hlist_node *pos;
 
-	hlist_for_each_entry(entry, pos, if_list, list) {
+	hlist_for_each_entry(entry, if_list, list) {
 		if (compare_eth(entry->addr, interface))
 			return;
 	}
@@ -144,10 +142,9 @@ static ssize_t vis_data_read_prim_sec(char *buff,
 				      const struct hlist_head *if_list)
 {
 	struct if_list_entry *entry;
-	struct hlist_node *pos;
 	size_t len = 0;
 
-	hlist_for_each_entry(entry, pos, if_list, list) {
+	hlist_for_each_entry(entry, if_list, list) {
 		if (entry->primary)
 			len += sprintf(buff + len, "PRIMARY, ");
 		else
@@ -160,10 +157,9 @@ static ssize_t vis_data_read_prim_sec(char *buff,
 static size_t vis_data_count_prim_sec(struct hlist_head *if_list)
 {
 	struct if_list_entry *entry;
-	struct hlist_node *pos;
 	size_t count = 0;
 
-	hlist_for_each_entry(entry, pos, if_list, list) {
+	hlist_for_each_entry(entry, if_list, list) {
 		if (entry->primary)
 			count += 9;
 		else
@@ -553,7 +549,6 @@ static int find_best_vis_server(struct bat_priv *bat_priv,
 {
 	struct hashtable_t *hash = bat_priv->orig_hash;
 	struct neigh_node *router;
-	struct hlist_node *node;
 	struct hlist_head *head;
 	struct orig_node *orig_node;
 	struct vis_packet *packet;
@@ -566,7 +561,7 @@ static int find_best_vis_server(struct bat_priv *bat_priv,
 		head = &hash->table[i];
 
 		rcu_read_lock();
-		hlist_for_each_entry_rcu(orig_node, node, head, hash_entry) {
+		hlist_for_each_entry_rcu(orig_node, head, hash_entry) {
 			router = orig_node_get_router(orig_node);
 			if (!router)
 				continue;
@@ -602,7 +597,6 @@ static bool vis_packet_full(const struct vis_info *info)
 static int generate_vis_packet(struct bat_priv *bat_priv)
 {
 	struct hashtable_t *hash = bat_priv->orig_hash;
-	struct hlist_node *node;
 	struct hlist_head *head;
 	struct orig_node *orig_node;
 	struct neigh_node *router;
@@ -633,7 +627,7 @@ static int generate_vis_packet(struct bat_priv *bat_priv)
 		head = &hash->table[i];
 
 		rcu_read_lock();
-		hlist_for_each_entry_rcu(orig_node, node, head, hash_entry) {
+		hlist_for_each_entry_rcu(orig_node, head, hash_entry) {
 			router = orig_node_get_router(orig_node);
 			if (!router)
 				continue;
@@ -672,7 +666,7 @@ next:
 		head = &hash->table[i];
 
 		rcu_read_lock();
-		hlist_for_each_entry_rcu(tt_common_entry, node, head,
+		hlist_for_each_entry_rcu(tt_common_entry, head,
 					 hash_entry) {
 			entry = (struct vis_info_entry *)
 					skb_put(info->skb_packet,
@@ -701,21 +695,21 @@ static void purge_vis_packets(struct bat_priv *bat_priv)
 {
 	uint32_t i;
 	struct hashtable_t *hash = bat_priv->vis_hash;
-	struct hlist_node *node, *node_tmp;
+	struct hlist_node *node_tmp;
 	struct hlist_head *head;
 	struct vis_info *info;
 
 	for (i = 0; i < hash->size; i++) {
 		head = &hash->table[i];
 
-		hlist_for_each_entry_safe(info, node, node_tmp,
+		hlist_for_each_entry_safe(info, node_tmp,
 					  head, hash_entry) {
 			/* never purge own data. */
 			if (info == bat_priv->my_vis_info)
 				continue;
 
 			if (has_timed_out(info->first_seen, VIS_TIMEOUT)) {
-				hlist_del(node);
+				hlist_del(&info->hash_entry);
 				send_list_del(info);
 				kref_put(&info->refcount, free_info);
 			}
@@ -728,7 +722,6 @@ static void broadcast_vis_packet(struct bat_priv *bat_priv,
 {
 	struct neigh_node *router;
 	struct hashtable_t *hash = bat_priv->orig_hash;
-	struct hlist_node *node;
 	struct hlist_head *head;
 	struct orig_node *orig_node;
 	struct vis_packet *packet;
@@ -745,7 +738,7 @@ static void broadcast_vis_packet(struct bat_priv *bat_priv,
 		head = &hash->table[i];
 
 		rcu_read_lock();
-		hlist_for_each_entry_rcu(orig_node, node, head, hash_entry) {
+		hlist_for_each_entry_rcu(orig_node, head, hash_entry) {
 			/* if it's a vis server and reachable, send it. */
 			if (!(orig_node->flags & VIS_SERVER))
 				continue;

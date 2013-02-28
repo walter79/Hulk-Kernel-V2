@@ -525,7 +525,6 @@ static struct css_set *find_existing_css_set(
 	int i;
 	struct cgroupfs_root *root = cgrp->root;
 	struct hlist_head *hhead;
-	struct hlist_node *node;
 	struct css_set *cg;
 
 	/*
@@ -547,7 +546,7 @@ static struct css_set *find_existing_css_set(
 	}
 
 	hhead = css_set_hash(template);
-	hlist_for_each_entry(cg, node, hhead, hlist) {
+	hlist_for_each_entry(cg, hhead, hlist) {
 		if (!compare_css_sets(cg, oldcg, cgrp, template))
 			continue;
 
@@ -1584,10 +1583,9 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 		write_lock(&css_set_lock);
 		for (i = 0; i < CSS_SET_TABLE_SIZE; i++) {
 			struct hlist_head *hhead = &css_set_table[i];
-			struct hlist_node *node;
 			struct css_set *cg;
 
-			hlist_for_each_entry(cg, node, hhead, hlist)
+			hlist_for_each_entry(cg, hhead, hlist)
 				link_css_set(&tmp_cg_links, cg, root_cgrp);
 		}
 		write_unlock(&css_set_lock);
@@ -4220,10 +4218,9 @@ int __init_or_module cgroup_load_subsys(struct cgroup_subsys *ss)
 	write_lock(&css_set_lock);
 	for (i = 0; i < CSS_SET_TABLE_SIZE; i++) {
 		struct css_set *cg;
-		struct hlist_node *node, *tmp;
 		struct hlist_head *bucket = &css_set_table[i], *new_bucket;
 
-		hlist_for_each_entry_safe(cg, node, tmp, bucket, hlist) {
+		hlist_for_each_entry_safe(cg, tmp, bucket, hlist) {
 			/* skip entries that we already rehashed */
 			if (cg->subsys[ss->subsys_id])
 				continue;
