@@ -323,6 +323,7 @@ enum {
 
 	WQ_DRAINING		= 1 << 7, /* internal: workqueue is draining */
 	WQ_RESCUER		= 1 << 8, /* internal: workqueue has rescuer */
+	__WQ_DRAINING		= 1 << 16, /* internal: workqueue is draining */
 
 	WQ_MAX_ACTIVE		= 512,	  /* I like 512, better ideas? */
 	WQ_MAX_UNBOUND_PER_CPU	= 4,	  /* 4 * #cpus for unbound wq */
