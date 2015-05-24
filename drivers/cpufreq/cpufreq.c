@@ -35,6 +35,10 @@
 
 #include <trace/events/power.h>
 
+#ifdef CONFIG_CPUFREQ_HARDLIMIT
+#include <linux/cpufreq_hardlimit.h>
+#endif
+
 extern ssize_t get_gpu_vdd_levels_str(char *buf);
 extern void set_gpu_vdd_levels(int uv_tbl[]);
 
@@ -125,6 +129,7 @@ static void handle_update(struct work_struct *work);
  */
 static BLOCKING_NOTIFIER_HEAD(cpufreq_policy_notifier_list);
 static struct srcu_notifier_head cpufreq_transition_notifier_list;
+struct atomic_notifier_head cpufreq_govinfo_notifier_list;
 
 static bool init_cpufreq_transition_notifier_list_called;
 static int __init init_cpufreq_transition_notifier_list(void)
@@ -134,6 +139,15 @@ static int __init init_cpufreq_transition_notifier_list(void)
 	return 0;
 }
 pure_initcall(init_cpufreq_transition_notifier_list);
+
+static bool init_cpufreq_govinfo_notifier_list_called;
+static int __init init_cpufreq_govinfo_notifier_list(void)
+{
+	ATOMIC_INIT_NOTIFIER_HEAD(&cpufreq_govinfo_notifier_list);
+	init_cpufreq_govinfo_notifier_list_called = true;
+	return 0;
+}
+pure_initcall(init_cpufreq_govinfo_notifier_list);
 
 static int off __read_mostly;
 int cpufreq_disabled(void)
@@ -347,10 +361,8 @@ void cpufreq_notify_transition(struct cpufreq_freqs *freqs, unsigned int state)
 		trace_cpu_frequency(freqs->new, freqs->cpu);
 		srcu_notifier_call_chain(&cpufreq_transition_notifier_list,
 				CPUFREQ_POSTCHANGE, freqs);
-		if (likely(policy) && likely(policy->cpu == freqs->cpu)) {
+		if (likely(policy) && likely(policy->cpu == freqs->cpu))
 			policy->cur = freqs->new;
-			sysfs_notify(&policy->kobj, NULL, "scaling_cur_freq");
-		}
 		break;
 	}
 }
@@ -372,6 +384,35 @@ void cpufreq_notify_utilization(struct cpufreq_policy *policy,
 		sysfs_notify(&policy->kobj, NULL, "cpu_utilization");
 
 }
+
+/* Yank555.lu : CPU Hardlimit - Hook to force scaling_min/max_freq to be updated on Hardlimit change */
+#ifdef CONFIG_CPUFREQ_HARDLIMIT
+extern void update_scaling_limits(unsigned int freq_min, unsigned int freq_max)
+{
+	int cpu;
+	struct cpufreq_policy *policy;
+
+	for_each_possible_cpu(cpu) {
+		#ifdef CONFIG_CPUFREQ_HARDLIMIT_DEBUG
+		pr_info("[HARDLIMIT] cpufreq.c cpu%d \n", cpu);
+		#endif
+		policy = cpufreq_cpu_get(cpu);
+		if (policy != NULL) {
+			#ifdef CONFIG_CPUFREQ_HARDLIMIT_DEBUG
+			pr_info("[HARDLIMIT] cpufreq.c cpu%d - update_scaling_limits : old_min = %u / old_max = %u / new_min = %u / new_max = %u \n",
+					cpu,
+					policy->min,
+					policy->max,
+					freq_min,
+					freq_max
+				);
+			#endif
+			policy->user_policy.min = policy->min = freq_min;
+			policy->user_policy.max = policy->max = freq_max;
+		}
+	}
+}
+#endif
 
 /*********************************************************************
  *                          SYSFS INTERFACE                          *
@@ -512,8 +553,90 @@ static ssize_t store_##file_name					\
 	return ret ? ret : count;					\
 }
 
+/* Yank555.lu : CPU Hardlimit - Enforce userspace dvfs lock */
+#ifdef CONFIG_CPUFREQ_HARDLIMIT
+static ssize_t store_scaling_min_freq
+(struct cpufreq_policy *policy, const char *buf, size_t count)
+{
+	unsigned int ret = -EINVAL;
+	struct cpufreq_policy new_policy;
+
+	// Yank555.lu - Enforce userspace dvfs lock
+	switch (userspace_dvfs_lock_status()) {
+		case CPUFREQ_HARDLIMIT_USERSPACE_DVFS_IGNORE:
+			return count;
+		case CPUFREQ_HARDLIMIT_USERSPACE_DVFS_REFUSE:
+			return -EINVAL;
+	}
+
+	ret = cpufreq_get_policy(&new_policy, policy->cpu);
+	if (ret)
+		return -EINVAL;
+
+	new_policy.min = new_policy.user_policy.min;
+	new_policy.max = new_policy.user_policy.max;
+
+	ret = sscanf(buf, "%u", &new_policy.min);
+	if (ret != 1)
+		return -EINVAL;
+
+	ret = cpufreq_driver->verify(&new_policy);
+	if (ret)
+		pr_err("cpufreq: Frequency verification failed\n");
+
+	policy->user_policy.min = new_policy.min;
+	policy->user_policy.max = new_policy.max;
+
+	ret = __cpufreq_set_policy(policy, &new_policy);
+
+	return ret ? ret : count;
+}
+#else
+/* Disable scaling_min_freq store */
 store_one(scaling_min_freq, min);
+#endif /* CONFIG_CPUFREQ_HARDLIMIT */
+
+/* Yank555.lu : CPU Hardlimit - Enforce userspace dvfs lock */
+#ifdef CONFIG_CPUFREQ_HARDLIMIT
+static ssize_t store_scaling_max_freq
+(struct cpufreq_policy *policy, const char *buf, size_t count)
+{
+	unsigned int ret = -EINVAL;
+	struct cpufreq_policy new_policy;
+
+	// Yank555.lu - Enforce userspace dvfs lock
+	switch (userspace_dvfs_lock_status()) {
+		case CPUFREQ_HARDLIMIT_USERSPACE_DVFS_IGNORE:
+			return count;
+		case CPUFREQ_HARDLIMIT_USERSPACE_DVFS_REFUSE:
+			return -EINVAL;
+	}
+
+	ret = cpufreq_get_policy(&new_policy, policy->cpu);
+	if (ret)
+		return -EINVAL;
+
+	new_policy.min = new_policy.user_policy.min;
+	new_policy.max = new_policy.user_policy.max;
+
+	ret = sscanf(buf, "%u", &new_policy.max);
+	if (ret != 1)
+		return -EINVAL;
+
+	ret = cpufreq_driver->verify(&new_policy);
+	if (ret)
+		pr_err("cpufreq: Frequency verification failed\n");
+
+	policy->user_policy.min = new_policy.min;
+	policy->user_policy.max = new_policy.max;
+
+	ret = __cpufreq_set_policy(policy, &new_policy);
+
+	return ret ? ret : count;
+}
+#else
 store_one(scaling_max_freq, max);
+#endif /* CONFIG_CPUFREQ_HARDLIMIT */
 ssize_t show_GPU_mV_table(struct cpufreq_policy *policy, char *buf)
 {
 	int modu = 0;
@@ -1612,7 +1735,8 @@ int cpufreq_register_notifier(struct notifier_block *nb, unsigned int list)
 	if (cpufreq_disabled())
 		return -EINVAL;
 
-	WARN_ON(!init_cpufreq_transition_notifier_list_called);
+	WARN_ON(!init_cpufreq_transition_notifier_list_called ||
+		!init_cpufreq_govinfo_notifier_list_called);
 
 	switch (list) {
 	case CPUFREQ_TRANSITION_NOTIFIER:
@@ -1622,6 +1746,10 @@ int cpufreq_register_notifier(struct notifier_block *nb, unsigned int list)
 	case CPUFREQ_POLICY_NOTIFIER:
 		ret = blocking_notifier_chain_register(
 				&cpufreq_policy_notifier_list, nb);
+		break;
+	case CPUFREQ_GOVINFO_NOTIFIER:
+		ret = atomic_notifier_chain_register(
+				&cpufreq_govinfo_notifier_list, nb);
 		break;
 	default:
 		ret = -EINVAL;
@@ -1657,6 +1785,10 @@ int cpufreq_unregister_notifier(struct notifier_block *nb, unsigned int list)
 	case CPUFREQ_POLICY_NOTIFIER:
 		ret = blocking_notifier_chain_unregister(
 				&cpufreq_policy_notifier_list, nb);
+		break;
+	case CPUFREQ_GOVINFO_NOTIFIER:
+		ret = atomic_notifier_chain_unregister(
+				&cpufreq_govinfo_notifier_list, nb);
 		break;
 	default:
 		ret = -EINVAL;
@@ -1992,8 +2124,24 @@ int cpufreq_update_policy(unsigned int cpu)
 
 	pr_debug("updating policy for CPU %u\n", cpu);
 	memcpy(&policy, data, sizeof(struct cpufreq_policy));
+#ifdef CONFIG_CPUFREQ_HARDLIMIT
+	#ifdef CONFIG_CPUFREQ_HARDLIMIT_DEBUG
+	pr_info("[HARDLIMIT] cpufreq.c update_policy : old_min = %u / old_max = %u / tried_min = %u / tried_max = %u / new_min = %u / new_max = %u \n",
+			policy.min,
+			policy.max,
+			data->user_policy.min,
+			data->user_policy.max,
+			check_cpufreq_hardlimit(data->user_policy.min),
+			check_cpufreq_hardlimit(data->user_policy.max)
+		);
+	#endif
+	/* Yank555.lu - Enforce hardlimit */
+	policy.min = check_cpufreq_hardlimit(data->user_policy.min);
+	policy.max = check_cpufreq_hardlimit(data->user_policy.max);
+#else
 	policy.min = data->user_policy.min;
 	policy.max = data->user_policy.max;
+#endif
 	policy.policy = data->user_policy.policy;
 	policy.governor = data->user_policy.governor;
 
@@ -2021,6 +2169,214 @@ no_policy:
 	return ret;
 }
 EXPORT_SYMBOL(cpufreq_update_policy);
+
+#ifdef CONFIG_MSM_LIMITER
+/*
+ *	cpufreq_set_freq - set max/min freq for a cpu
+ *	@cpu: CPU whose frequency needs to be changed
+ */
+int cpufreq_set_freq(unsigned int max_freq, unsigned int min_freq,
+			unsigned int cpu)
+{
+	struct cpufreq_policy *cpu_policy;
+	unsigned int ret = 0;
+
+	if (!max_freq && !min_freq)
+		return ret;
+
+	get_online_cpus();
+	if (!cpu_online(cpu)) {
+		if (max_freq)
+			per_cpu(cpufreq_policy_save, cpu).max = max_freq;
+		if (min_freq)
+			per_cpu(cpufreq_policy_save, cpu).min = min_freq;
+	} else {
+		cpu_policy = cpufreq_cpu_get(cpu);
+		if (!cpu_policy) {
+			ret = -EINVAL;
+			goto skip;
+		}
+
+		if (!down_read_trylock(&cpufreq_rwsem)) {
+			cpufreq_cpu_put(cpu_policy);
+			goto skip;
+		}
+
+		down_read(&cpu_policy->rwsem);
+
+		if (max_freq && max_freq >= cpu_policy->min) {
+			cpu_policy->user_policy.max = max_freq;
+			cpu_policy->max = max_freq;
+		}
+		if (min_freq && min_freq <= cpu_policy->max) {
+			cpu_policy->user_policy.min = min_freq;
+			cpu_policy->min = min_freq;
+		}
+
+		up_read(&cpu_policy->rwsem);
+		up_read(&cpufreq_rwsem);
+
+		cpufreq_cpu_put(cpu_policy);
+	}
+skip:
+	put_online_cpus();
+
+	return ret;
+}
+EXPORT_SYMBOL(cpufreq_set_freq);
+
+/*
+ *	cpufreq_get_max - get max freq of a cpu
+ *	@cpu: CPU whose max frequency needs to be known
+ */
+int cpufreq_get_max(unsigned int cpu)
+{
+	struct cpufreq_policy *cpu_policy;
+	unsigned int freq = per_cpu(cpufreq_policy_save, cpu).max;
+
+	get_online_cpus();
+	if (cpu_online(cpu)) {
+		cpu_policy = cpufreq_cpu_get(cpu);
+		if (!cpu_policy)
+			goto skip;
+
+		if (!down_read_trylock(&cpufreq_rwsem)) {
+			cpufreq_cpu_put(cpu_policy);
+			goto skip;
+		}
+
+		down_read(&cpu_policy->rwsem);
+
+		freq = cpu_policy->max;
+
+		up_read(&cpu_policy->rwsem);
+		up_read(&cpufreq_rwsem);
+
+		cpufreq_cpu_put(cpu_policy);
+	}
+skip:
+	put_online_cpus();
+	return freq;
+}
+EXPORT_SYMBOL(cpufreq_get_max);
+
+/*
+ *	cpufreq_get_min - get min freq of a cpu
+ *	@cpu: CPU whose min frequency needs to be known
+ */
+int cpufreq_get_min(unsigned int cpu)
+{
+	struct cpufreq_policy *cpu_policy;
+	unsigned int freq = per_cpu(cpufreq_policy_save, cpu).min;
+
+	get_online_cpus();
+	if (cpu_online(cpu)) {
+		cpu_policy = cpufreq_cpu_get(cpu);
+		if (!cpu_policy)
+			goto skip;
+
+		if (!down_read_trylock(&cpufreq_rwsem)) {
+			cpufreq_cpu_put(cpu_policy);
+			goto skip;
+		}
+
+		down_read(&cpu_policy->rwsem);
+
+		freq = cpu_policy->min;
+
+		up_read(&cpu_policy->rwsem);
+		up_read(&cpufreq_rwsem);
+
+		cpufreq_cpu_put(cpu_policy);
+	}
+skip:
+	put_online_cpus();
+	return freq;
+}
+EXPORT_SYMBOL(cpufreq_get_min);
+
+/*
+ *	cpufreq_set_gov - set governor for a cpu
+ *	@cpu: CPU whose governor needs to be changed
+ *	@target_gov: new governor to be set
+ */
+int cpufreq_set_gov(char *target_gov, unsigned int cpu)
+{
+	struct cpufreq_policy *cpu_policy;
+	unsigned int ret = 0;
+
+	get_online_cpus();
+	if (!cpu_online(cpu)) {
+		strncpy(per_cpu(cpufreq_policy_save, cpu).gov, target_gov,
+			CPUFREQ_NAME_LEN);
+	} else {
+		cpu_policy = cpufreq_cpu_get(cpu);
+		if (!cpu_policy) {
+			ret = -EINVAL;
+			goto skip;
+		}
+
+		if (!down_read_trylock(&cpufreq_rwsem)) {
+			cpufreq_cpu_put(cpu_policy);
+			goto skip;
+		}
+
+		down_read(&cpu_policy->rwsem);
+
+		ret = store_scaling_governor(cpu_policy, target_gov, ret);
+
+		up_read(&cpu_policy->rwsem);
+		up_read(&cpufreq_rwsem);
+
+		cpufreq_cpu_put(cpu_policy);
+	}
+skip:
+	put_online_cpus();
+
+	return ret;
+}
+EXPORT_SYMBOL(cpufreq_set_gov);
+
+/*
+ *	cpufreq_get_gov - get governor for a cpu
+ *	@cpu: CPU whose governor needs to be known
+ */
+char *cpufreq_get_gov(unsigned int cpu)
+{
+	struct cpufreq_policy *cpu_policy;
+	char *val = per_cpu(cpufreq_policy_save, cpu).gov;
+
+	get_online_cpus();
+	if (cpu_online(cpu)) {
+		cpu_policy = cpufreq_cpu_get(cpu);
+		if (!cpu_policy)
+			goto skip;
+
+		if (!down_read_trylock(&cpufreq_rwsem)) {
+			cpufreq_cpu_put(cpu_policy);
+			goto skip;
+		}
+
+		down_read(&cpu_policy->rwsem);
+
+		if (cpu_policy->policy == CPUFREQ_POLICY_POWERSAVE)
+			val = "powersave";
+		else if (cpu_policy->policy == CPUFREQ_POLICY_PERFORMANCE)
+			val = "performance";
+		else if (cpu_policy->governor)
+			val = cpu_policy->governor->name;
+
+		up_read(&cpu_policy->rwsem);
+		up_read(&cpufreq_rwsem);
+
+		cpufreq_cpu_put(cpu_policy);
+	}
+skip:
+	put_online_cpus();
+	return val;
+}
+EXPORT_SYMBOL(cpufreq_get_gov);
+#endif
 
 static int __cpuinit cpufreq_cpu_callback(struct notifier_block *nfb,
 					unsigned long action, void *hcpu)

@@ -3,6 +3,7 @@
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/spinlock.h>
+#include <linux/list.h>
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/debugfs.h>
@@ -72,6 +73,8 @@ struct gpio_desc {
 #endif
 };
 static struct gpio_desc gpio_desc[ARCH_NR_GPIOS];
+
+static LIST_HEAD(gpio_chips);
 
 #ifdef CONFIG_GPIO_SYSFS
 static DEFINE_IDR(dirent_idr);
@@ -228,12 +231,13 @@ static ssize_t gpio_direction_show(struct device *dev,
 
 	mutex_lock(&sysfs_lock);
 
-	if (!test_bit(FLAG_EXPORT, &desc->flags))
+	if (!test_bit(FLAG_EXPORT, &desc->flags)) {
 		status = -EIO;
-	else
+	} else {
 		status = sprintf(buf, "%s\n",
 			test_bit(FLAG_IS_OUT, &desc->flags)
 				? "out" : "in");
+	}
 
 	mutex_unlock(&sysfs_lock);
 	return status;
@@ -999,7 +1003,7 @@ static int __init gpiolib_sysfs_init(void)
 {
 	int		status;
 	unsigned long	flags;
-	unsigned	gpio;
+	struct gpio_chip *chip;
 
 	status = class_register(&gpio_class);
 	if (status < 0)
@@ -1012,10 +1016,7 @@ static int __init gpiolib_sysfs_init(void)
 	 * registered, and so arch_initcall() can always gpio_export().
 	 */
 	spin_lock_irqsave(&gpio_lock, flags);
-	for (gpio = 0; gpio < ARCH_NR_GPIOS; gpio++) {
-		struct gpio_chip	*chip;
-
-		chip = gpio_desc[gpio].chip;
+	list_for_each_entry(chip, &gpio_chips, list) {
 		if (!chip || chip->exported)
 			continue;
 
@@ -1041,6 +1042,43 @@ static inline void gpiochip_unexport(struct gpio_chip *chip)
 }
 
 #endif /* CONFIG_GPIO_SYSFS */
+
+/*
+ * Add a new chip to the global chips list, keeping the list of chips sorted
+ * by base order.
+ *
+ * Return -EBUSY if the new chip overlaps with some other chip's integer
+ * space.
+ */
+static int gpiochip_add_to_list(struct gpio_chip *chip)
+{
+	struct list_head *pos = &gpio_chips;
+	struct gpio_chip *_chip;
+	int err = 0;
+
+	/* find where to insert our chip */
+	list_for_each(pos, &gpio_chips) {
+		_chip = list_entry(pos, struct gpio_chip, list);
+		/* shall we insert before _chip? */
+		if (_chip->base >= chip->base + chip->ngpio)
+			break;
+	}
+
+	/* are we stepping on the chip right before? */
+	if (pos != &gpio_chips && pos->prev != &gpio_chips) {
+		_chip = list_entry(pos->prev, struct gpio_chip, list);
+		if (_chip->base + _chip->ngpio > chip->base) {
+			dev_err(chip->dev,
+			       "GPIO integer space overlap, cannot add chip\n");
+			err = -EBUSY;
+		}
+	}
+
+	if (!err)
+		list_add_tail(&chip->list, pos);
+
+	return err;
+}
 
 /**
  * gpiochip_add() - register a gpio_chip
@@ -1083,13 +1121,8 @@ int gpiochip_add(struct gpio_chip *chip)
 		chip->base = base;
 	}
 
-	/* these GPIO numbers must not be managed by another gpio_chip */
-	for (id = base; id < base + chip->ngpio; id++) {
-		if (gpio_desc[id].chip != NULL) {
-			status = -EBUSY;
-			break;
-		}
-	}
+	status = gpiochip_add_to_list(chip);
+
 	if (status == 0) {
 		for (id = base; id < base + chip->ngpio; id++) {
 			gpio_desc[id].chip = chip;
@@ -1156,6 +1189,8 @@ int gpiochip_remove(struct gpio_chip *chip)
 	if (status == 0) {
 		for (id = chip->base; id < chip->base + chip->ngpio; id++)
 			gpio_desc[id].chip = NULL;
+
+		list_del(&chip->list);
 	}
 
 	spin_unlock_irqrestore(&gpio_lock, flags);
@@ -1182,20 +1217,17 @@ struct gpio_chip *gpiochip_find(const void *data,
 				int (*match)(struct gpio_chip *chip,
 					     const void *data))
 {
-	struct gpio_chip *chip = NULL;
+	struct gpio_chip *chip;
 	unsigned long flags;
-	int i;
 
 	spin_lock_irqsave(&gpio_lock, flags);
-	for (i = 0; i < ARCH_NR_GPIOS; i++) {
-		if (!gpio_desc[i].chip)
-			continue;
-
-		if (match(gpio_desc[i].chip, data)) {
-			chip = gpio_desc[i].chip;
+	list_for_each_entry(chip, &gpio_chips, list)
+		if (match(chip, data))
 			break;
-		}
-	}
+
+	/* No match? */
+	if (&chip->list == &gpio_chips)
+		chip = NULL;
 	spin_unlock_irqrestore(&gpio_lock, flags);
 
 	return chip;

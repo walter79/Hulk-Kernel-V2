@@ -866,7 +866,7 @@ void kgsl_late_resume_driver(struct early_suspend *h)
 	if (device->pwrscale.policy == NULL)
 		kgsl_pwrctrl_pwrlevel_change(device, KGSL_PWRLEVEL_TURBO);
 
-	if (kgsl_pwrctrl_wake(device) != 0) {
+	if (kgsl_pwrctrl_wake(device, 0) != 0) {
 		mutex_unlock(&device->mutex);
 		return;
 	}
@@ -1186,7 +1186,7 @@ static int kgsl_open(struct inode *inodep, struct file *filep)
 		if (result)
 			goto err_freedevpriv;
 
-		result = device->ftbl->start(device);
+		result = device->ftbl->start(device, 0);
 		if (result)
 			goto err_freedevpriv;
 		/*
@@ -2349,6 +2349,9 @@ error_attach:
 		break;
 	}
 error:
+	/* Clear gpuaddr here so userspace doesn't get any wrong ideas */
+	param->gpuaddr = 0;
+
 	kfree(entry);
 	return result;
 }
@@ -3197,7 +3200,7 @@ static int kgsl_mmap(struct file *file, struct vm_area_struct *vma)
 	if (ret)
 		return ret;
 
-	vma->vm_flags |= entry->memdesc.ops->vmflags(&entry->memdesc);
+	vma->vm_flags |= entry->memdesc.ops->vmflags;
 
 	vma->vm_private_data = entry;
 
@@ -3352,6 +3355,7 @@ int kgsl_device_platform_probe(struct kgsl_device *device)
 
 	kgsl_ion_client = msm_ion_client_create(UINT_MAX, KGSL_NAME);
 
+	/* Get starting physical address of device registers */
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
 					   device->iomemname);
 	if (res == NULL) {
@@ -3368,6 +3372,33 @@ int kgsl_device_platform_probe(struct kgsl_device *device)
 
 	device->reg_phys = res->start;
 	device->reg_len = resource_size(res);
+
+	/*
+	 * Check if a shadermemname is defined, and then get shader memory
+	 * details including shader memory starting physical address
+	 * and shader memory length
+	 */
+	if (device->shadermemname != NULL) {
+		res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
+						device->shadermemname);
+
+		if (res == NULL) {
+			KGSL_DRV_ERR(device,
+			"Shader memory: platform_get_resource_byname failed\n");
+		}
+
+		else {
+			device->shader_mem_phys = res->start;
+			device->shader_mem_len = resource_size(res);
+		}
+
+		if (!devm_request_mem_region(device->dev,
+					device->shader_mem_phys,
+					device->shader_mem_len,
+						device->name)) {
+			KGSL_DRV_ERR(device, "request_mem_region_failed\n");
+		}
+	}
 
 	if (!devm_request_mem_region(device->dev, device->reg_phys,
 				device->reg_len, device->name)) {
@@ -3502,7 +3533,7 @@ int kgsl_postmortem_dump(struct kgsl_device *device, int manual)
 	device->pwrctrl.nap_allowed = false;
 
 	/* Force on the clocks */
-	kgsl_pwrctrl_wake(device);
+	kgsl_pwrctrl_wake(device, 0);
 
 	/* Disable the irq */
 	kgsl_pwrctrl_irq(device, KGSL_PWRFLAGS_OFF);

@@ -1454,7 +1454,6 @@ static struct dentry *__d_instantiate_unique(struct dentry *entry,
 
 	list_for_each_entry(alias, &inode->i_dentry, d_u.d_alias) {
 		struct qstr *qstr = &alias->d_name;
-
 		/*
 		 * Don't need alias->d_lock here, because aliases with
 		 * d_parent == entry->d_parent are not subject to name or

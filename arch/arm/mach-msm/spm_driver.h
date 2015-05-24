@@ -45,3 +45,4 @@ int msm_spm_drv_set_spm_enable(struct msm_spm_driver_data *dev,
 int msm_spm_drv_set_phase(struct msm_spm_driver_data *dev,
 		unsigned int phase_cnt);
 #endif
+

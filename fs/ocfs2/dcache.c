@@ -170,7 +170,6 @@ struct dentry *ocfs2_find_local_alias(struct inode *inode,
 				      u64 parent_blkno,
 				      int skip_unhashed)
 {
-	struct list_head *p;
 	struct dentry *dentry = NULL;
 
 	spin_lock(&inode->i_lock);

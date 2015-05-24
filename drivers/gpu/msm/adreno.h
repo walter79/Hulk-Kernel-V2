@@ -115,6 +115,9 @@ struct adreno_device {
 	struct ocmem_buf *ocmem_hdl;
 	unsigned int ocmem_base;
 	unsigned int gpu_cycles;
+
+	struct work_struct start_work;
+	struct work_struct input_work;
 };
 
 #define PERFCOUNTER_FLAG_NONE 0x0
@@ -276,6 +279,10 @@ void adreno_regread(struct kgsl_device *device, unsigned int offsetwords,
 				unsigned int *value);
 void adreno_regwrite(struct kgsl_device *device, unsigned int offsetwords,
 				unsigned int value);
+
+void adreno_shadermem_regread(struct kgsl_device *device,
+						unsigned int offsetwords,
+						unsigned int *value);
 
 int adreno_dump(struct kgsl_device *device, int manual);
 unsigned int adreno_a3xx_rbbm_clock_ctl_default(struct adreno_device

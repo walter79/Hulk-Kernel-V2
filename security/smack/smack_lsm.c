@@ -406,8 +406,8 @@ static int smack_sb_statfs(struct dentry *dentry)
  * Returns 0 if current can write the floor of the filesystem
  * being mounted on, an error code otherwise.
  */
-static int smack_sb_mount(char *dev_name, struct path *path,
-			  char *type, unsigned long flags, void *data)
+static int smack_sb_mount(const char *dev_name, struct path *path,
+			  const char *type, unsigned long flags, void *data)
 {
 	struct superblock_smack *sbp = path->dentry->d_sb->s_security;
 	struct smk_audit_info ad;
@@ -1161,7 +1161,7 @@ static int smack_file_fcntl(struct file *file, unsigned int cmd,
 }
 
 /**
- * smack_file_mmap :
+ * smack_mmap_file :
  * Check permissions for a mmap operation.  The @file may be NULL, e.g.
  * if mapping anonymous memory.
  * @file contains the file structure for file to map (may be NULL).
@@ -1170,10 +1170,9 @@ static int smack_file_fcntl(struct file *file, unsigned int cmd,
  * @flags contains the operational flags.
  * Return 0 if permission is granted.
  */
-static int smack_file_mmap(struct file *file,
+static int smack_mmap_file(struct file *file,
 			   unsigned long reqprot, unsigned long prot,
-			   unsigned long flags, unsigned long addr,
-			   unsigned long addr_only)
+			   unsigned long flags)
 {
 	struct smack_known *skp;
 	struct smack_rule *srp;
@@ -1187,11 +1186,6 @@ static int smack_file_mmap(struct file *file,
 	int mmay;
 	int tmay;
 	int rc;
-
-	/* do DAC check on address space usage */
-	rc = cap_file_mmap(file, reqprot, prot, flags, addr, addr_only);
-	if (rc || addr_only)
-		return rc;
 
 	if (file == NULL || file->f_dentry == NULL)
 		return 0;
@@ -1349,7 +1343,7 @@ static int smack_file_receive(struct file *file)
 }
 
 /**
- * smack_dentry_open - Smack dentry open processing
+ * smack_file_open - Smack dentry open processing
  * @file: the object
  * @cred: unused
  *
@@ -1357,7 +1351,7 @@ static int smack_file_receive(struct file *file)
  *
  * Returns 0
  */
-static int smack_dentry_open(struct file *file, const struct cred *cred)
+static int smack_file_open(struct file *file, const struct cred *cred)
 {
 	struct inode_smack *isp = file->f_path.dentry->d_inode->i_security;
 
@@ -3544,12 +3538,13 @@ struct security_operations smack_ops = {
 	.file_ioctl = 			smack_file_ioctl,
 	.file_lock = 			smack_file_lock,
 	.file_fcntl = 			smack_file_fcntl,
-	.file_mmap =			smack_file_mmap,
+	.mmap_file =			smack_mmap_file,
+	.mmap_addr =			cap_mmap_addr,
 	.file_set_fowner = 		smack_file_set_fowner,
 	.file_send_sigiotask = 		smack_file_send_sigiotask,
 	.file_receive = 		smack_file_receive,
 
-	.dentry_open =			smack_dentry_open,
+	.file_open =			smack_file_open,
 
 	.cred_alloc_blank =		smack_cred_alloc_blank,
 	.cred_free =			smack_cred_free,

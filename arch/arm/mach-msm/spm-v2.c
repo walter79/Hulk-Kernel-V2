@@ -523,3 +523,4 @@ int __devinit msm_spm_drv_init(struct msm_spm_driver_data *dev,
 
 	return 0;
 }
+

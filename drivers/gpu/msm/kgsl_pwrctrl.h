@@ -47,6 +47,8 @@ struct kgsl_clk_stats {
  * @pwrlevels - List of supported power levels
  * @active_pwrlevel - The currently active power level
  * @thermal_pwrlevel - maximum powerlevel constraint from thermal
+ * @default_pwrlevel - device wake up power level
+ * @init_pwrlevel - device inital power level
  * @max_pwrlevel - maximum allowable powerlevel per the user
  * @min_pwrlevel - minimum allowable powerlevel per the user
  * @num_pwrlevels - number of available power levels
@@ -60,6 +62,7 @@ struct kgsl_clk_stats {
  * @irq_name - resource name for the IRQ
  * @restore_slumber - Flag to indicate that we are in a suspend/restore sequence
  * @clk_stats - structure of clock statistics
+ * @step_mul - multiplier for moving between power levels
  */
 
 struct kgsl_pwrctrl {
@@ -71,6 +74,7 @@ struct kgsl_pwrctrl {
 	unsigned int active_pwrlevel;
 	int thermal_pwrlevel;
 	unsigned int default_pwrlevel;
+	unsigned int init_pwrlevel;
 	unsigned int max_pwrlevel;
 	unsigned int min_pwrlevel;
 	unsigned int num_pwrlevels;
@@ -85,6 +89,7 @@ struct kgsl_pwrctrl {
 	s64 time;
 	unsigned int restore_slumber;
 	struct kgsl_clk_stats clk_stats;
+	unsigned int step_mul;
 };
 
 void kgsl_pwrctrl_irq(struct kgsl_device *device, int state);
@@ -94,7 +99,7 @@ void kgsl_timer(unsigned long data);
 void kgsl_idle_check(struct work_struct *work);
 void kgsl_pre_hwaccess(struct kgsl_device *device);
 int kgsl_pwrctrl_sleep(struct kgsl_device *device);
-int kgsl_pwrctrl_wake(struct kgsl_device *device);
+int kgsl_pwrctrl_wake(struct kgsl_device *device, int priority);
 void kgsl_pwrctrl_pwrlevel_change(struct kgsl_device *device,
 	unsigned int level);
 int kgsl_pwrctrl_init_sysfs(struct kgsl_device *device);

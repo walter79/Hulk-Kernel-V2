@@ -360,13 +360,13 @@ static int kgsl_pwrctrl_num_pwrlevels_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%d\n", pwr->num_pwrlevels - 1);
 }
 
-/* Given a GPU clock value, return the nearest powerlevel */
+/* Given a GPU clock value, return the lowest matching powerlevel */
 
 static int _get_nearest_pwrlevel(struct kgsl_pwrctrl *pwr, unsigned int clock)
 {
 	int i;
 
-	for (i = 0; i < pwr->num_pwrlevels - 1; i++) {
+	for (i = pwr->num_pwrlevels - 1; i >= 0; i--) {
 		if (abs(pwr->pwrlevels[i].gpu_freq - clock) < 5000000)
 			return i;
 	}
@@ -1058,6 +1058,7 @@ int kgsl_pwrctrl_init(struct kgsl_device *device)
 
 	pwr->active_pwrlevel = pdata->init_level;
 	pwr->default_pwrlevel = pdata->init_level;
+	pwr->init_pwrlevel = pdata->init_level;
 	for (i = 0; i < pdata->num_levels; i++) {
 		pwr->pwrlevels[i].gpu_freq =
 		(pdata->pwrlevel[i].gpu_freq > 0) ?
@@ -1111,6 +1112,8 @@ int kgsl_pwrctrl_init(struct kgsl_device *device)
 		}
 	}
 
+	/* Set the power level step multiplier with 1 as the default */
+	pwr->step_mul = pdata->step_mul ? pdata->step_mul : 1;
 
 	pm_runtime_enable(device->parentdev);
 	register_early_suspend(&device->display_off);
@@ -1381,8 +1384,16 @@ int kgsl_pwrctrl_sleep(struct kgsl_device *device)
 EXPORT_SYMBOL(kgsl_pwrctrl_sleep);
 
 /******************************************************************/
-/* Caller must hold the device mutex. */
-int kgsl_pwrctrl_wake(struct kgsl_device *device)
+/**
+ * kgsl_pwrctrl_wake() - Power up the GPU from a slumber/sleep state
+ * @device - Pointer to the kgsl_device struct
+ * @priority - Boolean flag to indicate that the GPU start should be run in the
+ * higher priority thread
+ *
+ * Resume the GPU from a lower power state to ACTIVE.  The caller to this
+ * fucntion must host the kgsl_device mutex.
+ */
+int kgsl_pwrctrl_wake(struct kgsl_device *device, int priority)
 {
 	int status = 0;
 	unsigned int context_id;
@@ -1393,7 +1404,7 @@ int kgsl_pwrctrl_wake(struct kgsl_device *device)
 	kgsl_pwrctrl_request_state(device, KGSL_STATE_ACTIVE);
 	switch (device->state) {
 	case KGSL_STATE_SLUMBER:
-		status = device->ftbl->start(device);
+		status = device->ftbl->start(device, priority);
 		if (status) {
 			kgsl_pwrctrl_request_state(device, KGSL_STATE_NONE);
 			KGSL_DRV_ERR(device, "start failed %d\n", status);
@@ -1454,8 +1465,10 @@ EXPORT_SYMBOL(kgsl_pwrctrl_isenabled);
 
 void kgsl_pwrctrl_enable(struct kgsl_device *device)
 {
+	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
 	/* Order pwrrail/clk sequence based upon platform */
 	kgsl_pwrctrl_pwrrail(device, KGSL_PWRFLAGS_ON);
+	kgsl_pwrctrl_pwrlevel_change(device, pwr->default_pwrlevel);
 	kgsl_pwrctrl_clk(device, KGSL_PWRFLAGS_ON, KGSL_STATE_ACTIVE);
 	kgsl_pwrctrl_axi(device, KGSL_PWRFLAGS_ON);
 }
@@ -1541,7 +1554,7 @@ int kgsl_active_count_get(struct kgsl_device *device)
 			mutex_lock(&device->mutex);
 		}
 
-		ret = kgsl_pwrctrl_wake(device);
+		ret = kgsl_pwrctrl_wake(device, 1);
 	}
 	if (ret == 0)
 		device->active_cnt++;

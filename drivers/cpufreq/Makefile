@@ -3,6 +3,8 @@ obj-$(CONFIG_CPU_FREQ)			+= cpufreq.o
 obj-$(CONFIG_CPU_BOOST)			+= cpu-boost.o
 # CPUfreq stats
 obj-$(CONFIG_CPU_FREQ_STAT)             += cpufreq_stats.o
+# CPUfreq hardlimit
+obj-$(CONFIG_CPUFREQ_HARDLIMIT)         += cpufreq_hardlimit.o
 
 # CPUfreq governors 
 obj-$(CONFIG_CPU_FREQ_GOV_ABYSSPLUG)		+= cpufreq_abyssplug.o
@@ -31,6 +33,10 @@ obj-$(CONFIG_CPU_FREQ_GOV_INTELLIMM)	        += cpufreq_intellimm.o
 obj-$(CONFIG_CPU_FREQ_GOV_SMARTMAX)		+= cpufreq_smartmax.o
 obj-$(CONFIG_CPU_FREQ_GOV_IMPULSE)		+= cpufreq_impulse.o
 obj-$(CONFIG_CPU_FREQ_GOV_PEGASUSQ)		+= cpufreq_pegasusq.o
+obj-$(CONFIG_CPU_FREQ_GOV_SMARTASSV2)		+= cpufreq_smartass2.o
+obj-$(CONFIG_CPU_FREQ_GOV_ONDEMANDPLUS)		+= cpufreq_ondemandplus.o
+obj-$(CONFIG_CPU_FREQ_GOV_HYPER)		+= cpufreq_HYPER.o
+obj-$(CONFIG_CPU_FREQ_GOV_YANKDEMAND)		+= cpufreq_yankdemand.o
 
 # CPUfreq cross-arch helpers
 obj-$(CONFIG_CPU_FREQ_TABLE)			+= freq_table.o

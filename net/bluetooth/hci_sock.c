@@ -89,12 +89,11 @@ void hci_send_to_sock(struct hci_dev *hdev, struct sk_buff *skb,
 							struct sock *skip_sk)
 {
 	struct sock *sk;
-	struct hlist_node *node;
 
 	BT_DBG("hdev %p len %d", hdev, skb->len);
 
 	read_lock(&hci_sk_list.lock);
-	sk_for_each(sk, node, &hci_sk_list.head) {
+	sk_for_each(sk, &hci_sk_list.head) {
 		struct hci_filter *flt;
 		struct sk_buff *nskb;
 

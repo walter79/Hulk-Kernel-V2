@@ -3074,7 +3074,7 @@ static struct clk *pix_rdi_clk_get_parent(struct clk *c)
 	return pix_rdi_mux_map[to_pix_rdi_clk(c)->cur_rate];
 }
 
-static int pix_rdi_clk_list_rate(struct clk *c, unsigned n)
+static long pix_rdi_clk_list_rate(struct clk *c, unsigned n)
 {
 	if (pix_rdi_mux_map[n])
 		return n;
@@ -3544,6 +3544,7 @@ static struct rcg_clk gfx2d1_clk = {
 /*Shared by 8064, 8930, and 8960ab*/
 static struct clk_freq_tbl clk_tbl_gfx3d[] = {
 	F_GFX3D(        0, gnd,   0,  0),
+	F_GFX3D(  1800000, pxo,   1, 15),
 	F_GFX3D( 27000000, pxo,   0,  0),
 	F_GFX3D( 48000000, pll8,  1,  8),
 	F_GFX3D( 54857000, pll8,  1,  7),
@@ -3559,8 +3560,15 @@ static struct clk_freq_tbl clk_tbl_gfx3d[] = {
 	F_GFX3D(228571000, pll2,  2,  7),
 	F_GFX3D(266667000, pll2,  1,  3),
 	F_GFX3D(320000000, pll2,  2,  5),
+#ifdef CONFIG_GPU_OVERCLOCK
+	F_GFX3D(360000000, pll15, 2,  5),
+#endif
 	F_GFX3D(400000000, pll2,  1,  2),
 	F_GFX3D(450000000, pll15, 1,  2),
+#ifdef CONFIG_GPU_OVERCLOCK
+	F_GFX3D(500000000, pll15, 2,  4),
+	F_GFX3D(550000000, pll15, 2,  4),
+#endif
 	F_END
 };
 
@@ -3609,8 +3617,13 @@ static struct clk_freq_tbl clk_tbl_gfx3d_8930ab[] = {
 
 static unsigned long fmax_gfx3d_8064ab[VDD_DIG_NUM] = {
 	[VDD_DIG_LOW]     = 128000000,
+#ifdef CONFIG_GPU_OVERCLOCK
+	[VDD_DIG_NOMINAL] = 450000000,
+	[VDD_DIG_HIGH]    = 550000000
+#else
 	[VDD_DIG_NOMINAL] = 325000000,
 	[VDD_DIG_HIGH]    = 450000000
+#endif
 };
 
 static unsigned long fmax_gfx3d_8064[VDD_DIG_NUM] = {
@@ -5553,9 +5566,9 @@ static struct clk_lookup msm_clocks_8064[] = {
 	CLK_LOOKUP("npl_clk",		npl_tv_clk.c,		""),
 
 	CLK_LOOKUP("core_clk",		gfx3d_clk.c,	"kgsl-3d0.0"),
-	CLK_LOOKUP("core_clk",		gfx3d_clk.c,	"footswitch-8x60.2"),
+	CLK_LOOKUP("core_clk",		gfx3d_clk.c,	"footswitch-8x60.11"),
 	CLK_LOOKUP("bus_clk",
-			    gfx3d_axi_clk.c, "footswitch-8x60.2"),
+			    gfx3d_axi_clk.c, "footswitch-8x60.11"),
 	CLK_LOOKUP("iface_clk",         vcap_p_clk.c,           ""),
 	CLK_LOOKUP("iface_clk",         vcap_p_clk.c,           "msm_vcap.0"),
 	CLK_LOOKUP("iface_clk",         vcap_p_clk.c,	"footswitch-8x60.10"),
@@ -5609,7 +5622,7 @@ static struct clk_lookup msm_clocks_8064[] = {
 	CLK_LOOKUP("master_iface_clk",	dsi2_m_p_clk.c,		"mipi_dsi.2"),
 	CLK_LOOKUP("slave_iface_clk",	dsi2_s_p_clk.c,		"mipi_dsi.2"),
 	CLK_LOOKUP("iface_clk",		gfx3d_p_clk.c,	"kgsl-3d0.0"),
-	CLK_LOOKUP("iface_clk",		gfx3d_p_clk.c,	"footswitch-8x60.2"),
+	CLK_LOOKUP("iface_clk",		gfx3d_p_clk.c,	"footswitch-8x60.11"),
 	CLK_LOOKUP("master_iface_clk",	hdmi_m_p_clk.c,		"hdmi_msm.1"),
 	CLK_LOOKUP("slave_iface_clk",	hdmi_s_p_clk.c,		"hdmi_msm.1"),
 	CLK_LOOKUP("iface_clk",		ijpeg_p_clk.c,		"msm_gemini.0"),

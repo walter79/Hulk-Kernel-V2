@@ -1167,7 +1167,8 @@ struct class block_class = {
 	.name		= "block",
 };
 
-static char *block_devnode(struct device *dev, umode_t *mode)
+static char *block_devnode(struct device *dev, umode_t *mode,
+			   kuid_t *uid, kgid_t *gid)
 {
 	struct gendisk *disk = dev_to_disk(dev);
 
@@ -1535,9 +1536,11 @@ static void __disk_unblock_events(struct gendisk *disk, bool check_now)
 	intv = disk_events_poll_jiffies(disk);
 	set_timer_slack(&ev->dwork.timer, intv / 4);
 	if (check_now)
-		queue_delayed_work(system_nrt_freezable_wq, &ev->dwork, 0);
+		queue_delayed_work(system_freezable_power_efficient_wq,
+				&ev->dwork, 0);
 	else if (intv)
-		queue_delayed_work(system_nrt_freezable_wq, &ev->dwork, intv);
+		queue_delayed_work(system_freezable_power_efficient_wq,
+				&ev->dwork, intv);
 out_unlock:
 	spin_unlock_irqrestore(&ev->lock, flags);
 }
@@ -1579,10 +1582,9 @@ void disk_flush_events(struct gendisk *disk, unsigned int mask)
 
 	spin_lock_irq(&ev->lock);
 	ev->clearing |= mask;
-	if (!ev->block) {
-		cancel_delayed_work(&ev->dwork);
-		queue_delayed_work(system_nrt_freezable_wq, &ev->dwork, 0);
-	}
+	if (!ev->block)
+		mod_delayed_work(system_freezable_power_efficient_wq,
+				&ev->dwork, 0);
 	spin_unlock_irq(&ev->lock);
 }
 
@@ -1618,7 +1620,7 @@ unsigned int disk_clear_events(struct gendisk *disk, unsigned int mask)
 
 	/* uncondtionally schedule event check and wait for it to finish */
 	disk_block_events(disk);
-	queue_delayed_work(system_nrt_freezable_wq, &ev->dwork, 0);
+	queue_delayed_work(system_freezable_wq, &ev->dwork, 0);
 	flush_delayed_work(&ev->dwork);
 	__disk_unblock_events(disk, false);
 
@@ -1658,7 +1660,8 @@ static void disk_events_workfn(struct work_struct *work)
 
 	intv = disk_events_poll_jiffies(disk);
 	if (!ev->block && intv)
-		queue_delayed_work(system_nrt_freezable_wq, &ev->dwork, intv);
+		queue_delayed_work(system_freezable_power_efficient_wq,
+				&ev->dwork, intv);
 
 	spin_unlock_irq(&ev->lock);
 

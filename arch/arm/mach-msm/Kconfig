@@ -2031,18 +2031,17 @@ config LOW_CPUCLOCKS
 	help
 	  Ultra low cpu frequencies enabled for CPU and L2 Cache
 
+config GPU_OVERCLOCK
+	bool "Enable GPU Overclocking option"
+	default n
+	help
+	  Kraint 600 ab GPU overclock up to 600 MHz
+
 config CPU_OVERCLOCK
 	bool "Enable CPU Overclocking option"
 	default n
 	help
 	  Krait overclocking up to 2.1 GHz
-
-config OC_ULTIMATE
-	bool "Ultimate CPU Overclocking"
-	depends on CPU_OVERCLOCK
-	default n
-	help
-	  Ultimate Krait overclocking up to 2.3 GHz
 
 config MSM_AVS_HW
 	bool "Enable Adaptive Voltage Scaling (AVS)"
@@ -2652,6 +2651,14 @@ config MSM_RUN_QUEUE_STATS
 	 This option enalbes statistics collection on Run Queue. A daemon
          in user mode, called MPDecision will be using this data to decide
          on when to switch off/on the other cores.
+
+config MSM_RUN_QUEUE_STATS_BE_CONSERVATIVE
+	bool "Use a more conservative computation for RQ Stats"
+	depends on MSM_RUN_QUEUE_STATS
+	default n
+	help
+	  Enable more conservative computation of load and size of the run
+	  queue.
 
 config MSM_STANDALONE_POWER_COLLAPSE
        bool "Enable standalone power collapse"
@@ -3311,4 +3318,35 @@ config INTELLI_PLUG
         help
           Generic Intelli-plug cpu hotplug driver for ARM SOCs
 
+config MSM_HOTPLUG
+	bool "MSM hotplug driver"
+	depends on HOTPLUG_CPU
+	default y
+	help
+	  The MSM hotplug driver controls on-/offlining of additional cores based
+	  on current cpu load.
+
+config BRICKED_HOTPLUG
+	bool "Enable kernel based mpdecision"
+	depends on MSM_RUN_QUEUE_STATS
+	default y
+	help
+	  This enables kernel based multi core control.
+	  (up/down hotplug based on load)
+
+config MSM_LIMITER
+	bool "MSM Frequency Limiter Driver"
+	default y
+	help
+	  The MSM Frequency Limiter Driver controls max frequency limit for each CPU
+	  to desired value on suspend/resume
+
 endif
+
+config KERNEL_TEXT_MPU_PROT
+        bool "Enable xpu protection of kernel r/o sections"
+        help
+          Enables xpu protection of kernel code and read-only data
+          sections early in boot. Read access is permitted to
+          all masters; Write access is only permited to the
+          secure world.

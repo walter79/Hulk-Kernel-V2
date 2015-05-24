@@ -63,6 +63,8 @@
 #define KGSL_EVENT_TIMESTAMP_RETIRED 0
 #define KGSL_EVENT_CANCELLED 1
 
+#define KGSL_FLAG_WAKE_ON_TOUCH BIT(0)
+
 struct kgsl_device;
 struct platform_device;
 struct kgsl_device_private;
@@ -83,7 +85,7 @@ struct kgsl_functable {
 	unsigned int (*isidle) (struct kgsl_device *device);
 	int (*suspend_context) (struct kgsl_device *device);
 	int (*init) (struct kgsl_device *device);
-	int (*start) (struct kgsl_device *device);
+	int (*start) (struct kgsl_device *device, int priority);
 	int (*stop) (struct kgsl_device *device);
 	int (*getproperty) (struct kgsl_device *device,
 		enum kgsl_property_type type, void *value,
@@ -157,11 +159,27 @@ struct kgsl_device {
 	unsigned int ver_minor;
 	uint32_t flags;
 	enum kgsl_deviceid id;
+
+	/* Starting physical address for GPU registers */
 	unsigned long reg_phys;
+
+	/* Starting Kernel virtual address for GPU registers */
 	void *reg_virt;
+
+	/* Total memory size for all GPU registers */
 	unsigned int reg_len;
+
+	/* Kernel virtual address for GPU shader memory */
+	void *shader_mem_virt;
+
+	/* Starting physical address for GPU shader memory */
+	unsigned long shader_mem_phys;
+
+	/* GPU shader memory size */
+	unsigned int shader_mem_len;
 	struct kgsl_memdesc memstore;
 	const char *iomemname;
+	const char *shadermemname;
 
 	struct kgsl_mh mh;
 	struct kgsl_mmu mmu;

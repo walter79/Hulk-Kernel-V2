@@ -280,8 +280,8 @@ int security_sb_statfs(struct dentry *dentry)
 	return security_ops->sb_statfs(dentry);
 }
 
-int security_sb_mount(char *dev_name, struct path *path,
-                       char *type, unsigned long flags, void *data)
+int security_sb_mount(const char *dev_name, struct path *path,
+                       const char *type, unsigned long flags, void *data)
 {
 	return security_ops->sb_mount(dev_name, path, type, flags, data);
 }
@@ -691,16 +691,20 @@ int security_file_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	return security_ops->file_ioctl(file, cmd, arg);
 }
 
-int security_file_mmap(struct file *file, unsigned long reqprot,
-			unsigned long prot, unsigned long flags,
-			unsigned long addr, unsigned long addr_only)
+int security_mmap_file(struct file *file, unsigned long reqprot,
+			unsigned long prot, unsigned long flags)
 {
 	int ret;
 
-	ret = security_ops->file_mmap(file, reqprot, prot, flags, addr, addr_only);
+	ret = security_ops->mmap_file(file, reqprot, prot, flags);
 	if (ret)
 		return ret;
 	return ima_file_mmap(file, prot);
+}
+
+int security_mmap_addr(unsigned long addr)
+{
+	return security_ops->mmap_addr(addr);
 }
 
 int security_file_mprotect(struct vm_area_struct *vma, unsigned long reqprot,
@@ -735,11 +739,11 @@ int security_file_receive(struct file *file)
 	return security_ops->file_receive(file);
 }
 
-int security_dentry_open(struct file *file, const struct cred *cred)
+int security_file_open(struct file *file, const struct cred *cred)
 {
 	int ret;
 
-	ret = security_ops->dentry_open(file, cred);
+	ret = security_ops->file_open(file, cred);
 	if (ret)
 		return ret;
 

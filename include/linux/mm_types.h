@@ -151,6 +151,7 @@ struct page {
 #ifdef CONFIG_WANT_PAGE_DEBUG_FLAGS
 	unsigned long debug_flags;	/* Use atomic bitops on this */
 #endif
+	struct task_struct *tsk_dirty;	/* task that sets this page dirty */
 
 #ifdef CONFIG_KMEMCHECK
 	/*
@@ -266,6 +267,9 @@ struct vm_area_struct {
 #endif
 #ifdef CONFIG_NUMA
 	struct mempolicy *vm_policy;	/* NUMA policy for the VMA */
+#endif
+#ifdef CONFIG_UKSM
+	struct vma_slot *uksm_vma_slot;
 #endif
 };
 

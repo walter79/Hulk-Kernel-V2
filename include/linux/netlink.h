@@ -153,7 +153,7 @@ struct nlattr {
 
 #include <linux/capability.h>
 #include <linux/skbuff.h>
-#include <linux/export.h>
+#include <linux/module.h>
 
 struct net;
 
@@ -166,6 +166,7 @@ struct netlink_skb_parms {
 	struct ucred		creds;		/* Skb credentials	*/
 	__u32			pid;
 	__u32			dst_group;
+	struct sock		*ssk;
 };
 
 #define NETLINK_CB(skb)		(*(struct netlink_skb_parms*)&((skb)->cb))
@@ -175,11 +176,27 @@ struct netlink_skb_parms {
 extern void netlink_table_grab(void);
 extern void netlink_table_ungrab(void);
 
-extern struct sock *netlink_kernel_create(struct net *net,
-					  int unit,unsigned int groups,
-					  void (*input)(struct sk_buff *skb),
-					  struct mutex *cb_mutex,
-					  struct module *module);
+#define NL_CFG_F_NONROOT_RECV	(1 << 0)
+#define NL_CFG_F_NONROOT_SEND	(1 << 1)
+
+/* optional Netlink kernel configuration parameters */
+struct netlink_kernel_cfg {
+	unsigned int	groups;
+	void		(*input)(struct sk_buff *skb);
+	struct mutex	*cb_mutex;
+	void		(*bind)(int group);
+	unsigned int	flags;
+};
+
+extern struct sock *__netlink_kernel_create(struct net *net, int unit,
+					    struct module *module,
+					    struct netlink_kernel_cfg *cfg);
+static inline struct sock *
+netlink_kernel_create(struct net *net, int unit, struct netlink_kernel_cfg *cfg)
+{
+	return __netlink_kernel_create(net, unit, THIS_MODULE, cfg);
+}
+
 extern void netlink_kernel_release(struct sock *sk);
 extern int __netlink_change_ngroups(struct sock *sk, unsigned int groups);
 extern int netlink_change_ngroups(struct sock *sk, unsigned int groups);
@@ -272,11 +289,6 @@ static inline int netlink_dump_start(struct sock *ssk, struct sk_buff *skb,
 
 	return __netlink_dump_start(ssk, skb, nlh, control);
 }
-
-
-#define NL_NONROOT_RECV 0x1
-#define NL_NONROOT_SEND 0x2
-extern void netlink_set_nonroot(int protocol, unsigned flag);
 
 #endif /* __KERNEL__ */
 
